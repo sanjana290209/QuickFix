@@ -1,0 +1,203 @@
+import streamlit as st
+from twilio.rest import Client
+from pymongo import MongoClient
+import random
+# Replace with your Twilio Account SID and Auth Token
+TWILIO_ACCOUNT_SID = 'AC823bdcc7465bbf20f39ac67f9eecdc89'
+TWILIO_AUTH_TOKEN = 'fb516f029e370d8170ff11db7a13160c'
+
+WHATSAPP_NUMBERS = {
+    "ELECTRICIAN": 'whatsapp:+919321582824',  # Replace with the actual number
+    "PLUMBER": 'whatsapp:+917799877881',  # Replace with the actual number
+    "HOUSEKEEPING": 'whatsapp:+918497957293',  # Replace with the actual number
+    "TECHSUPPORT": 'whatsapp:+918074290773',  # Replace with the actual number
+    "AC REPAIR": 'whatsapp:+919515304435'  # Replace with the actual number
+}
+# Your registered WhatsApp numbers for different departments
+ALLOWED_RESOLVER_NUMBERS = {
+    '7799877881'  # Add more allowed resolver numbers as needed
+}
+
+# Create a Twilio client
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+# Connect to MongoDB
+client = MongoClient("mongodb://localhost:27017/")
+db = client["project"]
+login_collection = db["details"]
+complaint_collection = db["complaints"]
+resolver_collection = db["resolvers"]
+# Global variable to keep track of the last complaint ID
+if 'last_complaint_id' not in st.session_state:
+    st.session_state.last_complaint_id = 0
+
+# Function to get the next complaint ID from the database
+def get_next_complaint_id():
+    st.session_state.last_complaint_id += 1
+    return st.session_state.last_complaint_id
+
+# Function to simulate user authentication
+def authenticate_user(username, password):
+    user_data = login_collection.find_one({"username": username, "password": password})
+    return user_data is not None
+
+# Function to check if a username already exists in the database
+def username_exists(username):
+    return login_collection.find_one({"username": username}) is not None
+
+# Function to add a new user to the database
+def add_user(username, password):
+    login_collection.insert_one({"username": username, "password": password})
+
+# Function to add a new complaint to the database
+def add_complaint(complaint_data):
+    complaint_collection.insert_one(complaint_data)
+
+# Resolver page
+def resolver_page():
+    st.title("Resolver Page")
+    st.write("Enter your phone number to log in:")
+    phone_number = st.text_input("Phone Number")
+    if st.button("Click Here"):
+        # Validate phone number and authenticate the resolver
+        if phone_number in ALLOWED_RESOLVER_NUMBERS:
+            st.session_state.resolver_authenticated = True
+            st.session_state.resolver_phone_number = phone_number
+            st.experimental_rerun()
+        else:
+            st.error("Invalid phone number. Please try again.")
+
+# Resolver form page
+# Resolver form page
+def resolver_form():
+    st.title("Resolver Form")
+    complaint_id = st.text_input("Complaint ID")
+    status_options = ["In Progress", "Completed"]
+    status = st.selectbox("Status", status_options)
+
+    if st.button("Update Status"):
+        # Store resolver information directly in the resolver database
+        if complaint_id.isdigit():
+            complaint_id = int(complaint_id)
+            resolver_complaint = {"complaint_id": complaint_id, "status": status}
+            resolver_collection.insert_one(resolver_complaint)
+            st.success(f"Complaint ID {complaint_id} status updated to {status} in Resolver database!")
+        else:
+            st.error("Invalid complaint ID. Please enter a valid number.")
+
+
+# Login page
+def login_page():
+    st.title("Login Page")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if authenticate_user(username, password):
+            st.session_state.authenticated = True
+            st.experimental_rerun()
+        else:
+            st.error("Invalid username or password. Please try again.")
+import streamlit as st
+
+def reset_password():
+    # Get user input for email
+    email = st.text_input("Enter your email:")
+
+    # Check if the user clicked the "Reset Password" button
+    if st.button("Reset Password"):
+        # Implement password reset logic here
+        st.success(f"Password reset instructions sent to {email}")
+
+import streamlit as st
+
+def forgot_password_page():
+    # Get user input for email
+    email = st.text_input("Enter your email:")
+
+    # Check if the user clicked the "Reset Password" button
+    if st.button("Reset Password"):
+        # Implement password reset logic here
+        st.success(f"Password reset instructions sent to {email}")
+
+
+# Signup page
+def signup_page():
+    st.title("Signup Page")
+    new_username = st.text_input("New Username")
+    new_password = st.text_input("New Password", type="password")
+    if st.button("Signup"):
+        if not username_exists(new_username):
+            add_user(new_username, new_password)
+            st.session_state.authenticated = True
+            st.experimental_rerun()
+        else:
+            st.error("Username already exists. Please choose a different username.")
+
+# Complaint form page
+def complaint_form():
+    st.title("Student Complaint Form")
+    student_name = st.text_input("Student Name")
+    student_id = st.text_input("Student ID")
+    hostel = st.text_input("Hostel")
+    room_number = st.text_input("Room Number")
+    email = st.text_input("Email")
+    complaint_text = st.text_area("Complaint")
+    department = st.selectbox("Department", ["CHOOSE DEPARTMENT", "ELECTRICIAN", "PLUMBER", "HOUSEKEEPING", "TECHSUPPORT", "AC REPAIR"])
+
+    if st.button("Submit"):
+        complaint_id = get_next_complaint_id()
+
+        # Send details to WhatsApp based on the selected department
+        if department in WHATSAPP_NUMBERS:
+            to_number = WHATSAPP_NUMBERS[department]
+            message = f"New Complaint\n\n" \
+                      f"Complaint ID: {complaint_id}\n" \
+                      f"Student Name: {student_name}\n" \
+                      f"Student ID: {student_id}\n" \
+                      f"Hostel: {hostel}\n" \
+                      f"Room Number: {room_number}\n" \
+                      f"Email: {email}\n" \
+                      f"Complaint: {complaint_text}\n" \
+                      f"Department: {department}"
+
+            twilio_client.messages.create(body=message, from_="whatsapp:+14155238886", to=to_number)
+
+            # Store complaint data in the database
+            complaint_data = {
+                "complaint_id": complaint_id,
+                "student_name": student_name,
+                "student_id": student_id,
+                "hostel": hostel,
+                "room_number": room_number,
+                "email": email,
+                "complaint": complaint_text,
+                "department": department
+            }
+            add_complaint(complaint_data)
+
+            st.success("Complaint submitted successfully!")
+
+# Main application
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+
+if 'resolver_authenticated' not in st.session_state:
+    st.session_state.resolver_authenticated = False
+
+# Sidebar for login, signup, and forgot password
+page = st.sidebar.radio("Select an option", ["Login", "Signup", "Resolver"])
+
+if st.session_state.authenticated:
+    complaint_form()
+elif st.session_state.resolver_authenticated:
+    resolver_form()
+elif page == "Login":
+    login_page()
+elif page == "Signup":
+    signup_page()
+elif page == "Resolver":
+    resolver_page()
+else:
+    st.warning("Please select an option from the sidebar.")
+
+
